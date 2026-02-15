@@ -1,68 +1,502 @@
 {
+  "inbounds": [
+    {
+      "type": "mixed",
+      "listen": "0.0.0.0",
+      "listen_port": 7890
+    },
+    {
+      "type": "tproxy",
+      "listen": "0.0.0.0",
+      "listen_port": 9898
+    },
+    {
+      "type": "direct",
+      "tag": "dns-in",
+      "listen": "0.0.0.0",
+      "listen_port": 1053
+    }
+  ],
+  "providers": [
+    {
+      "type": "remote",
+      "tag": "Ikuuu",
+      "url": "http://127.0.0.1:3000/download/ikuuu",
+      "update_interval": "1d",
+      "download_detour": "Direct",
+      "health_check": {
+        "enabled": false,
+        "url": "https://www.gstatic.com/generate_204",
+        "interval": "10m"
+      }
+    },
+    {
+      "type": "remote",
+      "tag": "TH",
+      "url": "http://127.0.0.1:3000/download/TH",
+      "update_interval": "1d",
+      "download_detour": "Direct",
+      "health_check": {
+        "enabled": false,
+        "url": "https://www.gstatic.com/generate_204",
+        "interval": "10m"
+      }
+    }
+  ],
   "dns": {
     "servers": [
       {
-        "tag": "google",
-        "type": "tls",
+        "type": "https",
+        "tag": "Resolve-DNS",
+        "server": "223.5.5.5"
+      },
+      {
+        "type": "udp",
+        "tag": "Direct-DNS",
+        "server": "127.0.0.1",
+        "server_port": 1451
+      },
+      {
+        "type": "https",
+        "tag": "Proxy-DNS",
+        "detour": "Main",
         "server": "8.8.8.8"
       },
       {
-        "tag": "local",
-        "type": "https",
-        "server": "223.5.5.5"
+        "type": "fakeip",
+        "tag": "fakeip",
+        "inet4_range": "198.18.0.0/15",
+        "inet6_range": "fc00::/18"
       }
     ],
     "rules": [
       {
-        "rule_set": "geosite-geolocation-cn",
-        "server": "local"
+        "clash_mode": "direct",
+        "server": "Direct-DNS"
+      },
+      {
+        "clash_mode": "global",
+        "server": "Proxy-DNS"
+      },
+      {
+        "domain": [
+          "conn-service-cn-03.allawntech.com",
+          "conn-service-cn-04.allawntech.com",
+          "conn-service-cn-05.allawntech.com",
+          "conn-service-cn-07.allawntech.com",
+          "conn-service-cn-08.allawntech.com"
+        ],
+        "server": "Direct-DNS"
       },
       {
         "type": "logical",
         "mode": "and",
         "rules": [
           {
-            "rule_set": "geosite-geolocation-!cn",
+            "clash_mode": "PassAD",
             "invert": true
           },
           {
-            "rule_set": "geoip-cn"
+            "rule_set": "FuckAD"
           }
         ],
-        "server": "local"
+        "action": "predefined",
+        "rcode": "NXDOMAIN"
+      },
+      {
+        "package_name": [
+          "com.ss.android.ugc.aweme",
+          "com.ss.android.ugc.aweme.mobile"
+        ],
+        "server": "fakeip"
+      },
+      {
+        "domain_suffix": [
+          "googleapis.cn",
+          "xn--ngstr-Ira8j.com",
+          "ajay.app"
+        ],
+        "server": "Proxy-DNS"
+      },
+      {
+        "rule_set": [
+          "FCM"
+        ],
+        "server": "Direct-DNS"
+      },
+      {
+        "rule_set": "CN",
+        "server": "Direct-DNS",
+        "disable_cache": true
+      },
+      {
+        "query_type": [
+          "HTTPS",
+          "SVCB"
+        ],
+        "action": "reject"
+      },
+      {
+        "rule_set": "!CN",
+        "query_type": [
+          "A",
+          "AAAA"
+        ],
+        "server": "fakeip",
+        "rewrite_ttl": 1
       }
-    ]
+    ],
+    "final": "Proxy-DNS",
+    "reverse_mapping": true
   },
   "route": {
-    "default_domain_resolver": "local",
+    "final": "Main",
+    "auto_detect_interface": true,
+    "find_process": true,
+    "default_domain_resolver": "Resolve-DNS",
+    "rules": [
+      {
+        "inbound": "dns-in",
+        "action": "hijack-dns"
+      },
+      {
+        "port": 53,
+        "action": "hijack-dns"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "action": "sniff",
+        "sniffer": [
+          "http",
+          "tls",
+          "quic"
+        ]
+      },
+      {
+        "package_name": [
+          "com.ss.android.ugc.aweme",
+          "com.ss.android.ugc.aweme.mobile",
+          "com.ss.android.ugc.aweme.lite"
+        ],
+        "outbound": "DouYin"
+      },
+      {
+        "rule_set": "Telegram_IP",
+        "outbound": "Telegram"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "Direct"
+      },
+      {
+        "network": "icmp",
+        "outbound": "Direct"
+      },
+      {
+        "clash_mode": "direct",
+        "outbound": "Direct"
+      },
+      {
+        "clash_mode": "global",
+        "outbound": "Global"
+      },
+      {
+        "domain_suffix": [
+          "googleapis.cn",
+          "xn--ngstr-Ira8j.com",
+          "ajay.app",
+          "ping0.cc"
+        ],
+        "outbound": "Main"
+      },
+      {
+        "rule_set": "FCM",
+        "outbound": "Direct"
+      },
+      {
+        "rule_set": "Spotify",
+        "outbound": "Spotify"
+      },
+      {
+        "rule_set": "AI",
+        "outbound": "AI"
+      },
+      {
+        "rule_set": "GitHub",
+        "outbound": "GitHub"
+      },
+      {
+        "rule_set": "!CN",
+        "outbound": "Main"
+      },
+      {
+        "rule_set": "CN_IP",
+        "outbound": "Direct"
+      }
+    ],
     "rule_set": [
       {
         "type": "remote",
-        "tag": "geosite-geolocation-cn",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-cn.srs"
+        "tag": "FuckAD",
+        "url": "https://ghfast.top/raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-category-ads-all.srs",
+        "download_detour": "Direct",
+        "update_interval": "6h0m0s"
       },
       {
         "type": "remote",
-        "tag": "geosite-geolocation-!cn",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-!cn.srs"
+        "tag": "AI",
+        "url": "https://ghfast.top/github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/ai.srs",
+        "download_detour": "Direct",
+        "update_interval": "6h0m0s"
       },
       {
         "type": "remote",
-        "tag": "geoip-cn",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs"
+        "tag": "Telegram_IP",
+        "url": "https://ghfast.top/github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/telegramip.srs",
+        "download_detour": "Direct",
+        "update_interval": "6h0m0s"
+      },
+      {
+        "type": "remote",
+        "tag": "GitHub",
+        "url": "https://ghfast.top/github.com/MetaCubeX/meta-rules-dat/raw/refs/heads/sing/geo/geosite/github.srs",
+        "download_detour": "Direct",
+        "update_interval": "6h0m0s"
+      },
+      {
+        "type": "remote",
+        "tag": "Spotify",
+        "url": "https://ghfast.top/github.com/MetaCubeX/meta-rules-dat/raw/refs/heads/sing/geo/geosite/spotify.srs",
+        "download_detour": "Direct",
+        "update_interval": "6h0m0s"
+      },
+      {
+        "type": "remote",
+        "tag": "FCM",
+        "url": "https://ghfast.top/raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/googlefcm.srs",
+        "download_detour": "Direct",
+        "update_interval": "6h0m0s"
+      },
+      {
+        "type": "remote",
+        "tag": "CN_IP",
+        "url": "https://ghfast.top/raw.githubusercontent.com/OneOhCloud/one-geoip/rule-set/one-china.srs",
+        "download_detour": "Direct",
+        "update_interval": "6h0m0s"
+      },
+      {
+        "type": "remote",
+        "tag": "CN",
+        "url": "https://ghfast.top/github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/cn.srs",
+        "download_detour": "Direct",
+        "update_interval": "6h0m0s"
+      },
+      {
+        "type": "remote",
+        "tag": "!CN",
+        "url": "https://ghfast.top/github.com/DustinWin/ruleset_geodata/releases/download/sing-box-ruleset/proxy.srs",
+        "download_detour": "Direct",
+        "update_interval": "6h0m0s"
       }
     ]
   },
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Main",
+      "outbounds": [
+        "HK",
+        "SG",
+        "TW",
+        "US",
+        "JP",
+        "DL_Balance",
+        "Balance"
+      ]
+    },
+    {
+      "type": "selector",
+      "tag": "AI",
+      "outbounds": [
+        "Main",
+        "HK",
+        "SG",
+        "TW",
+        "US",
+        "JP",
+        "AI_Balance"
+      ]
+    },
+    {
+      "type": "selector",
+      "tag": "Telegram",
+      "outbounds": [
+        "Main",
+        "HK",
+        "SG",
+        "TW",
+        "US",
+        "JP",
+        "DL_Balance",
+        "Balance"
+      ]
+    },
+    {
+      "type": "selector",
+      "tag": "GitHub",
+      "outbounds": [
+        "Main",
+        "HK",
+        "SG",
+        "TW",
+        "US",
+        "JP",
+        "Direct"
+      ]
+    },
+    {
+      "type": "selector",
+      "tag": "Spotify",
+      "outbounds": [
+        "Main",
+        "HK",
+        "SG",
+        "TW",
+        "US",
+        "JP",
+        "Direct"
+      ]
+    },
+    {
+      "type": "selector",
+      "tag": "DouYin",
+      "outbounds": [
+        "广东"
+      ]
+    },
+    {
+      "type": "loadbalance",
+      "tag": "DL_Balance",
+      "strategy": "round-robin",
+      "include": "下载",
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "15m",
+      "idle_timeout": "30m",
+      "use_all_providers": true
+    },
+    {
+      "type": "loadbalance",
+      "tag": "AI_Balance",
+      "strategy": "consistent-hashing",
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "15m",
+      "idle_timeout": "30m",
+      "exclude": "HK",
+      "use_all_providers": true
+    },
+    {
+      "type": "loadbalance",
+      "tag": "Balance",
+      "strategy": "consistent-hashing",
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "15m",
+      "idle_timeout": "30m",
+      "use_all_providers": true
+    },
+    {
+      "type": "urltest",
+      "tag": "HK",
+      "include": "HK|香港|🇭🇰",
+      "use_all_providers": true,
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "15m",
+      "tolerance": 30,
+      "idle_timeout": "30m"
+    },
+    {
+      "type": "urltest",
+      "tag": "SG",
+      "include": "SG|新加坡|🇸🇬",
+      "use_all_providers": true,
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "15m",
+      "idle_timeout": "30m"
+    },
+    {
+      "type": "urltest",
+      "tag": "TW",
+      "include": "TW|台湾",
+      "use_all_providers": true,
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "15m",
+      "idle_timeout": "30m"
+    },
+    {
+      "type": "urltest",
+      "tag": "JP",
+      "include": "JP|日本|🇯🇵",
+      "use_all_providers": true,
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "15m",
+      "idle_timeout": "30m"
+    },
+    {
+      "type": "urltest",
+      "tag": "US",
+      "include": "US|美国|🇺🇸",
+      "use_all_providers": true,
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "15m",
+      "idle_timeout": "30m",
+      "tolerance": 100
+    },
+    {
+      "type": "urltest",
+      "tag": "广东",
+      "include": "广州|深圳",
+      "use_all_providers": true,
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "15m",
+      "idle_timeout": "30m"
+    },
+    {
+      "type": "selector",
+      "tag": "Global",
+      "outbounds": [
+        "Main",
+        "SG",
+        "HK",
+        "TW",
+        "US",
+        "JP"
+      ]
+    },
+    {
+      "type": "direct",
+      "tag": "Direct"
+    }
+  ],
+  "log": {
+    "level": "panic",
+    "timestamp": true,
+    "output": "/data/adb/box/run/sing-box.log"
+  },
   "experimental": {
+    "urltest_unified_delay": true,
     "cache_file": {
       "enabled": true,
+      "path": "./ref1nd_cache.db",
+      "store_fakeip": true,
       "store_rdrc": true
     },
     "clash_api": {
-      "default_mode": "Enhanced"
+      "external_controller": "0.0.0.0:9090",
+      "default_mode": "rule",
+      "external_ui": "ui",
+      "external_ui_download_url": "https://github.com/Zephyruso/zashboard/archive/gh-pages.zip"
     }
   }
 }
