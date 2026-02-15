@@ -332,6 +332,33 @@ start_redirect() {
       ${iptables} -t nat -A BOX_EXTERNAL -d ${subnet} -j RETURN
       ${iptables} -t nat -A BOX_LOCAL -d ${subnet} -j RETURN
     done
+    if [ -n "$bypass_blacklist" ]; then
+      for ITEM in $bypass_blacklist; do
+        # 1. 原生字符串截取，规避 echo 与 cut 产生的子进程开销
+        if [ "${ITEM#*:}" != "$ITEM" ]; then
+          USER_ID="${ITEM%%:*}"
+          PKG="${ITEM#*:}"
+        else
+          USER_ID=0
+          PKG="$ITEM"
+        fi
+        
+        # 2. 获取基础 UID，添加 exit 指令强制只读取首个匹配项，防止多行污染
+        BASE_UID=$(awk -v pkg="$PKG" '$1 == pkg {print $2; exit}' /data/system/packages.list 2>/dev/null)
+        
+        # 3. 严苛校验：确保 ID 非空且为纯数字，排除不可见换行符导致的算术崩溃
+        if [ -n "$BASE_UID" ] && [ -n "$USER_ID" ] && [ -z "${USER_ID//[0-9]/}" ] && [ -z "${BASE_UID//[0-9]/}" ]; then
+          ACTUAL_UID=$((USER_ID * 100000 + BASE_UID))
+          
+          # 此处保留了你原本的设计：TCP 走代理，非 TCP 走直连。
+          # 若需该名单彻底绕过代理，请直接删除下面带有 REDIRECT 的那行。
+          ${iptables} -t nat -A BOX_LOCAL -p tcp -m owner --uid-owner "$ACTUAL_UID" -j REDIRECT --to-ports "${redir_port}"
+          ${iptables} -t nat -A BOX_LOCAL -m owner --uid-owner "$ACTUAL_UID" -j RETURN
+        else
+          log Debug "start_redirect: bypass_blacklist 解析异常或未安装应用: $ITEM"
+        fi
+      done
+    fi
     # 中国大陆 IP 分流（IPv4 NAT）
     if [ "${bypass_cn_ip}" = "true" ] && [ "${bypass_cn_ip_v4}" = "true" ] && command -v ipset >/dev/null 2>&1; then
       ${iptables} -t nat -A BOX_EXTERNAL -m set --match-set cnip dst -j RETURN
@@ -614,6 +641,33 @@ start_tproxy() {
     for subnet in ${intranet[@]} ; do
       ${iptables} -t mangle -A BOX_LOCAL -d ${subnet} -j RETURN
     done
+    if [ -n "$bypass_blacklist" ]; then
+      for ITEM in $bypass_blacklist; do
+        # 使用 Shell 原生变量替换提升性能，舍弃 echo 与 cut 的子进程开销
+        if [ "${ITEM#*:}" != "$ITEM" ]; then
+          USER_ID="${ITEM%%:*}"
+          PKG="${ITEM#*:}"
+        else
+          USER_ID=0
+          PKG="$ITEM"
+        fi
+        
+        # 追加 exit 指令，确保匹配到首个 UID 后立即中断检索，防止多行污染
+        BASE_UID=$(awk -v pkg="$PKG" '$1 == pkg {print $2; exit}' /data/system/packages.list 2>/dev/null)
+        
+        # 严苛校验：确保 BASE_UID 和 USER_ID 非空且为纯数字，排除 \r 等非法字符
+        if [ -n "$BASE_UID" ] && [ -n "$USER_ID" ] && [ -z "${USER_ID//[0-9]/}" ] && [ -z "${BASE_UID//[0-9]/}" ]; then
+          ACTUAL_UID=$((USER_ID * 100000 + BASE_UID))
+          
+          # 根据具体所处函数保留对应的 iptables 指令：
+          ${iptables} -t mangle -A BOX_LOCAL -m owner --uid-owner "$ACTUAL_UID" -j MARK --set-xmark "${fwmark}"
+          ${iptables} -t mangle -A BOX_LOCAL -m owner --uid-owner "$ACTUAL_UID" -j RETURN
+        else
+          # 解析失败时输出 Debug 级日志，防止阻断主线程
+          log Debug "bypass_blacklist 无效项目或解析异常: $ITEM"
+        fi
+      done
+    fi
     [ "${bypass_cn_ip}" = "true" ] && [ "${bypass_cn_ip_v4}" = "true" ] && command -v ipset >/dev/null 2>&1 && ${iptables} -t mangle -A BOX_LOCAL -m set --match-set cnip dst -j RETURN
     ${iptables} -t mangle -A BOX_LOCAL -j LOCAL_IP_V4
   else
@@ -625,6 +679,33 @@ start_tproxy() {
     for subnet6 in ${intranet6[@]} ; do
       ${iptables} -t mangle -A BOX_LOCAL -d ${subnet6} -j RETURN
     done
+    if [ -n "$bypass_blacklist" ]; then
+      for ITEM in $bypass_blacklist; do
+        # 使用 Shell 原生变量替换提升性能，舍弃 echo 与 cut 的子进程开销
+        if [ "${ITEM#*:}" != "$ITEM" ]; then
+          USER_ID="${ITEM%%:*}"
+          PKG="${ITEM#*:}"
+        else
+          USER_ID=0
+          PKG="$ITEM"
+        fi
+        
+        # 追加 exit 指令，确保匹配到首个 UID 后立即中断检索，防止多行污染
+        BASE_UID=$(awk -v pkg="$PKG" '$1 == pkg {print $2; exit}' /data/system/packages.list 2>/dev/null)
+        
+        # 严苛校验：确保 BASE_UID 和 USER_ID 非空且为纯数字，排除 \r 等非法字符
+        if [ -n "$BASE_UID" ] && [ -n "$USER_ID" ] && [ -z "${USER_ID//[0-9]/}" ] && [ -z "${BASE_UID//[0-9]/}" ]; then
+          ACTUAL_UID=$((USER_ID * 100000 + BASE_UID))
+          
+          # 根据具体所处函数保留对应的 iptables 指令：
+          ${iptables} -t mangle -A BOX_LOCAL -m owner --uid-owner "$ACTUAL_UID" -j MARK --set-xmark "${fwmark}"
+          ${iptables} -t mangle -A BOX_LOCAL -m owner --uid-owner "$ACTUAL_UID" -j RETURN
+        else
+          # 解析失败时输出 Debug 级日志，防止阻断主线程
+          log Debug "bypass_blacklist 无效项目或解析异常: $ITEM"
+        fi
+      done
+    fi
     [ "${bypass_cn_ip}" = "true" ] && [ "${bypass_cn_ip_v6}" = "true" ] && command -v ipset >/dev/null 2>&1 && ${iptables} -t mangle -A BOX_LOCAL -m set --match-set cnip6 dst -j RETURN
     ${iptables} -t mangle -A BOX_LOCAL -j LOCAL_IP_V6
   fi
