@@ -150,7 +150,7 @@ ipv6_enable() {
   ip -6 rule del unreachable pref "${pref}"
 
   阻止所有 IPv6 的 53 端口 UDP 出站流量，防止 IPv6 DNS 泄漏
-  $IP6V -A OUTPUT -p udp --destination-port 53 -j DROP
+  $IP6V -A OUTPUT -p udp --destination-port 53 -m owner ! --uid-owner "${box_user}" -j DROP
 } >/dev/null 2>&1
 
 intranet=(
