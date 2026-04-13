@@ -105,6 +105,7 @@ box_run_crontab() {
 
   if [ "${run_crontab}" = "true" ]; then
     log Debug "crond 已启用"
+    echo "[$(date)] crond 启动，定时任务日志开始记录" > "${crontab_log}"
     if [ "$update_subscription" = "true" ] || [ "$update_geo" = "true" ]; then
       log Debug "定时任务间隔: ${interva_update}."
       echo "${interva_update} ${scripts_dir}/box.tool geosub" >> "${box_run}/root"
@@ -112,6 +113,16 @@ box_run_crontab() {
       if [ "${bin_name}" = "mihomo" ]; then
         log Info "${bin_name} 订阅更新: ${update_subscription}."
       fi
+    fi
+    # CN IP 定时下载并热更新
+    if [ "${update_cn_ip}" = "true" ]; then
+      echo "${interva_update} ${scripts_dir}/box.tool upcnip" >> "${box_run}/root"
+      log Info "CN IP 定时更新任务已注册 (${interva_update})"
+    fi
+    # Google 防火墙 REJECT 规则定时清理
+    if [ "${clean_google_crontab}" = "true" ]; then
+      echo "${interva_update} ${scripts_dir}/box.iptables clean_google" >> "${box_run}/root"
+      log Info "Google 防火墙清理定时任务已注册 (${interva_update})"
     fi
     cat "${box_dir}/crontab.cfg" >> "${box_run}/root"
     chmod 0644 "${box_run}/root"
@@ -203,7 +214,7 @@ prepare_singbox() {
 
   # 设置 auto_detect_interface/auto_route
   ${yq} '.route.auto_detect_interface = true' -i --output-format=json "${sing_config}"
-  ${yq} '(.inbounds[] | select(.type == "tun") | .auto_route) |= true' -i --output-format=json "${sing_config}"
+  ${yq} '(.inbounds[] | select(.type == "tun") | .auto_route) |= false' -i --output-format=json "${sing_config}"
   
   # 确保日志路径是绝对路径
   ${yq} '.log.output = "'"${box_run}/${bin_name}.log"'"' -i --output-format=json "${sing_config}" 2>/dev/null || true
@@ -220,12 +231,11 @@ prepare_singbox() {
           "tag": "tun-in",
           "interface_name": "sing",
           "address": ["172.18.0.1/30","fdfe:dcba:9876::1/126"],
-          "mtu": 9000,
-          "stack": "mixed",
-          "auto_route": true,
-          "strict_route": true,
-          "auto_redirect": true,
-          "include_android_user": [0,10,999],
+          "mtu": 1400,
+          "stack": "gvisor",
+          "auto_route": false,
+          "strict_route": false,
+          "auto_redirect": false,
           "include_uid": [],
           "exclude_uid": []
         }]' -i --output-format=json "${sing_config}"
@@ -233,7 +243,7 @@ prepare_singbox() {
       fi
     else
       # 非 tun 模式，关闭 auto_route
-      # sed -i -e 's/auto_route": true/auto_route": false/g' -e 's/"auto_detect_interface": true/"auto_detect_interface": false/g' "${sing_config}"
+      # sed -i -e 's/auto_route": true/auto_route": false/g' -e 's/"auto_detect_interface": true/"auto_detect_interface": true/g' "${sing_config}"
 
       # 检查是否有 tproxy 配置
       if ! busybox grep -q '"type": "tproxy"' "${sing_config}"; then
@@ -343,17 +353,16 @@ prepare_mihomo() {
     if [ -z "${mihomo_tun_status}" ]; then
       printf '%s\n' '' 'tun:' \
         '  enable: true' \
-        '  mtu: 9000' \
-        '  device: meta' \
-        '  stack: mixed # / gvisor / system' \
+        '  mtu: 1400' \
+        '  device: sing' \
+        '  stack: gvisor # / gvisor / system' \
         '  dns-hijack:' \
         '    - any:53' \
         '    - tcp://any:53' \
-        '  auto-route: true' \
-        '  strict-route: true' \
-        '  auto-redirect: true' \
+        '  auto-route: false' \
+        '  strict-route: false' \
+        '  auto-redirect: false' \
         '  auto-detect-interface: true' \
-        '  include-android-user: [0, 10]' \
         '  exclude-uid: []' \
         '  include-uid: []' \ >> "${mihomo_config}"
       log Debug "已为 ${mihomo_config} 添加 [tun] 配置"
@@ -899,7 +908,7 @@ case "$1" in
     stop_box
     ;;
   restart)
-    "${scripts_dir}/box.iptables" disable && stop_box
+    stop_box
     if start_box; then
       "${scripts_dir}/box.iptables" renew
       $scripts_dir/box.tool webroot >/dev/null 2>&1
