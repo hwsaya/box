@@ -29,20 +29,50 @@ logs="/data/adb/box/run"
 
 rules_add() {
   date > "${logs}/net.log"
-  iptables -t mangle -F LOCAL_IP_V4
-  ip -4 a | busybox awk '/inet/ {print $2}' | grep -vE "^127\.0\.0\.1" | while read -r local_ipv4 ; do
-    ${iptables} -t mangle -A LOCAL_IP_V4 -d $local_ipv4 -j ACCEPT
-    rv1=$?
-    ${iptables} -t nat -A LOCAL_IP_V4 -d $local_ipv4 -j ACCEPT
-    rv2=$?
-    ( [ $rv1 = "0" ] || [ $rv2 = "0" ] ) && echo "[Info]: 本地IP $local_ipv4，防环回规则已插入" >> ${logs}/net.log 2>&1
-  done
 
-  ip6tables -t mangle -F LOCAL_IP_V6
-  ip -6 a | busybox awk '/inet6/ {print $2}' | grep -vE "^fe80|^::1|^fd00" | while read -r local_ipv6 ; do
-    ${ip6tables} -t mangle -A LOCAL_IP_V6 -d $local_ipv6 -j ACCEPT
-    [ $? = "0" ] && echo "[Info]: 本地IP $local_ipv6，防环回规则已插入" >> ${logs}/net.log 2>&1
-  done
+  # ── IPv4 localnet ipset 重建 ──────────────────────────────────
+  # BYPASS_IP 链通过 --match-set localnet dst 引用此 ipset。
+  # 只要 ipset 更新，BYPASS_IP 链立即生效，无需 renew 整个规则。
+  if command -v ipset >/dev/null 2>&1 && ipset list localnet &>/dev/null; then
+    ipset flush localnet 2>/dev/null
+    for _s in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 \
+              172.16.0.0/12 192.0.0.0/24 192.0.2.0/24 192.88.99.0/24 \
+              192.168.0.0/16 198.51.100.0/24 203.0.113.0/24 \
+              224.0.0.0/4 240.0.0.0/4 255.0.0.0/4 255.255.255.0/24 255.255.255.255/32; do
+      ipset add localnet "${_s}" 2>/dev/null || true
+    done
+    # 动态本机 IP（如 192.168.1.100/24 → 取主机位加 /32）
+    ip -4 a | busybox awk '/inet/ {print $2}' | busybox grep -vE "^127\.0\.0\.1" | while read -r _lip; do
+      ipset add localnet "${_lip%%/*}/32" 2>/dev/null || true
+    done
+    echo "[Info]: localnet ipset 已更新（网络切换）" >> "${logs}/net.log"
+  else
+    echo "[Warn]: localnet ipset 不存在或 ipset 不可用，跳过更新" >> "${logs}/net.log"
+  fi
+
+  # ── IPv6 localnet6 ipset 重建 ─────────────────────────────────
+  # BYPASS_IP6 链通过 --match-set localnet6 dst 引用此 ipset。
+  if command -v ipset >/dev/null 2>&1 && ipset list localnet6 &>/dev/null; then
+    ipset flush localnet6 2>/dev/null
+    for _s6 in ::/128 ::1/128 ::ffff:0:0/96 100::/64 64:ff9b::/96 \
+               2001::/32 2001:10::/28 2001:20::/28 2001:db8::/32 \
+               2002::/16 fc00::/7 fe80::/10 ff00::/8; do
+      ipset add localnet6 "${_s6}" 2>/dev/null || true
+    done
+    ip -6 a | busybox awk '/inet6/ {print $2}' | busybox grep -vE "^fe80|^::1|^fd00" | while read -r _lip6; do
+      ipset add localnet6 "${_lip6%%/*}/128" 2>/dev/null || true
+    done
+    echo "[Info]: localnet6 ipset 已更新（网络切换）" >> "${logs}/net.log"
+  fi
+
+  # ── redirect 模式兼容：LOCAL_IP_V4 nat 链（tproxy 模式下静默忽略）──
+  if ${iptables} -t nat -L LOCAL_IP_V4 >/dev/null 2>&1; then
+    ${iptables} -t nat -F LOCAL_IP_V4 2>/dev/null
+    ip -4 a | busybox awk '/inet/ {print $2}' | busybox grep -vE "^127\.0\.0\.1" | while read -r _ipv4; do
+      ${iptables} -t nat -A LOCAL_IP_V4 -d "${_ipv4}" -j ACCEPT 2>/dev/null
+      echo "[Info]: 本地IP ${_ipv4} 已更新至 LOCAL_IP_V4（redirect 兼容）" >> "${logs}/net.log"
+    done
+  fi
 }
 
 if [ "$events" = "w" ]; then
