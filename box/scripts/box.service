@@ -355,7 +355,7 @@ prepare_mihomo() {
         '  enable: true' \
         '  mtu: 1400' \
         '  device: sing' \
-        '  stack: gvisor # / gvisor / system' \
+        '  stack: mixed # / gvisor / system' \
         '  dns-hijack:' \
         '    - any:53' \
         '    - tcp://any:53' \
