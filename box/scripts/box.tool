@@ -5,11 +5,6 @@ scripts_dir="${0%/*}"
 user_agent="box_for_root"
 source /data/adb/box/settings.ini
 
-# 使用 settings.ini 中提供的 log()
-TOOL_LOG="/data/adb/box/run/tool.log"
-busybox mkdir -p "$(dirname "$TOOL_LOG")"
-box_log="$TOOL_LOG"
-
 # 设置 GitHub API 访问配置
 setup_github_api() {
   rev1="busybox wget --no-check-certificate -qO-"
@@ -738,7 +733,7 @@ upkernel() {
 
       if [ "${singbox_stable}" = "disable" ]; then
         log Debug "下载 ${core_to_update} 预发行版"
-        latest_version=$($rev1 "${api_url}" | grep "tag_name" | busybox grep -oE "v[0-9].*" | head -1 | cut -d'"' -f1)
+        latest_version=$($rev1 "${api_url}" | grep "tag_name" | busybox grep -oE "v[0-9][^\"]*" | busybox grep -E "alpha|beta|rc" | head -1)
       else
         log Debug "下载 ${core_to_update} 最新稳定版"
         latest_version=$($rev1 "${api_url}/latest" | grep "tag_name" | busybox grep -oE "v[0-9.]*" | head -1)
@@ -1409,7 +1404,13 @@ case "$1" in
     upxui
     ;;
   upcnip)
-    upcnip
+    echo "[$(date)] 开始下载 CN IP 列表" >> "${crontab_log}"
+    if upcnip; then
+      echo "[$(date)] CN IP 下载完成" >> "${crontab_log}"
+      ${scripts_dir}/box.iptables hotswap_cn
+    else
+      echo "[$(date)] CN IP 下载失败，跳过热更新" >> "${crontab_log}"
+    fi
     ;;
   upyq|upcurl)
     $1
